@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogGuard – Log Analyzer &amp; Threat Dashboard</title>
+<style>
+  :root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;--high:#ef4444;--med:#f59e0b;--low:#22c55e}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+  header{padding:28px 20px;text-align:center;border-bottom:1px solid #334155}
+  header h1{margin:0;font-size:1.9rem}header h1 span{color:var(--accent)}
+  header p{margin:6px 0 0;color:var(--muted)}
+  main{max-width:1000px;margin:0 auto;padding:20px}
+  .card{background:var(--card);border-radius:12px;padding:20px;margin-bottom:20px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  button,input[type=file]{font:inherit}
+  button{background:var(--accent);color:#0f172a;border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer}
+  button.alt{background:#334155;color:var(--text)}
+  .err{background:#7f1d1d;padding:10px 14px;border-radius:8px;margin-bottom:16px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .stat{background:#0f172a;border-radius:10px;padding:14px;text-align:center}
+  .stat b{display:block;font-size:1.7rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #334155;word-break:break-word}
+  th{color:var(--muted)}
+  .tag{padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:700;color:#0f172a}
+  .High{background:var(--high)}.Medium{background:var(--med)}.Low{background:var(--low)}
+  .scroll{overflow-x:auto}
+  footer{text-align:center;color:var(--muted);font-size:.8rem;padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ Log<span>Guard</span></h1>
+  <p>Upload a server log and detect brute force, SQL injection, XSS, path traversal and scanning attempts.</p>
+</header>
+<main>
+  <div class="card">
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="post" enctype="multipart/form-data" class="row">
+      <input type="file" name="logfile" accept=".log,.txt">
+      <button type="submit">Analyze</button>
+    </form>
+    <form method="post" class="row" style="margin-top:12px">
+      <span style="color:var(--muted)">No log? Try a demo:</span>
+      <button class="alt" name="sample" value="access">Web access log</button>
+      <button class="alt" name="sample" value="auth">SSH auth log</button>
+    </form>
+  </div>
+
+  {% if result %}
+  <div class="card">
+    <h2 style="margin-top:0">Summary <small style="color:var(--muted);font-weight:400">({{ source }})</small></h2>
+    <div class="stats">
+      <div class="stat"><b>{{ result.total_lines }}</b>Lines read</div>
+      <div class="stat"><b>{{ result.findings|length }}</b>Findings</div>
+      <div class="stat"><b style="color:var(--high)">{{ result.by_severity.get('High',0) }}</b>High</div>
+      <div class="stat"><b style="color:var(--med)">{{ result.by_severity.get('Medium',0) }}</b>Medium</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h3 style="margin-top:0">Attacks by type</h3><canvas id="typeChart"></canvas></div>
+    <div class="card"><h3 style="margin-top:0">Top IPs (requests)</h3>
+      <table><tr><th>IP</th><th>Requests</th></tr>
+      {% for ip, c in result.top_ips %}<tr><td>{{ ip }}</td><td>{{ c }}</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0">Findings</h3>
+      <button class="alt" onclick="downloadCSV()">⬇ Download CSV</button>
+    </div>
+    <div class="scroll">
+    <table id="findings" style="margin-top:12px">
+      <tr><th>Severity</th><th>Attack</th><th>IP</th><th>Detail</th></tr>
+      {% for f in result.findings %}
+      <tr><td><span class="tag {{ f.severity }}">{{ f.severity }}</span></td>
+          <td>{{ f.attack }}</td><td>{{ f.ip }}</td><td>{{ f.detail }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No suspicious activity found 🎉</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    const typeData = {{ result.by_type|tojson }};
+    new Chart(document.getElementById('typeChart'), {
+      type: 'doughnut',
+      data: {labels: Object.keys(typeData), datasets: [{data: Object.values(typeData),
+        backgroundColor: ['#ef4444','#f59e0b','#38bdf8','#a78bfa','#22c55e','#f472b6','#94a3b8']}]},
+      options: {plugins: {legend: {labels: {color: '#e2e8f0'}}}}
+    });
+    function downloadCSV() {
+      const rows = [...document.querySelectorAll('#findings tr')].map(tr =>
+        [...tr.children].map(td => '"' + td.innerText.replace(/"/g, '""') + '"').join(','));
+      const blob = new Blob([rows.join('\n')], {type: 'text/csv'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'logguard_report.csv'; a.click();
+    }
+  </script>
+  {% endif %}
+</main>
+<footer>LogGuard – Cybersecurity Capstone · Analyzes only logs you own or are authorized to review · Uploads are never stored</footer>
+</body>
+</html>
