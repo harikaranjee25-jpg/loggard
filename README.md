@@ -4,7 +4,7 @@ Cybersecurity Capstone Project (Module 06)
 
 LogGuard is a web-based **defensive security tool**. Upload a web server access log or an SSH auth log and it detects common attack patterns and shows them on a dashboard.
 
-**Live demo:** `<add your Render URL>`
+**Live demo:** `https://loggard.onrender.com`
 **Demo video:** `<add link>`
 
 ## Features
@@ -22,8 +22,8 @@ Dashboard: summary stats, attack-type chart, top IPs, findings table, CSV export
 
 ## Run locally
 ```bash
-git clone https://github.com/harikaranjee25-jpg/logguard.git
-cd logguard
+git clone https://github.com/harikaranjee25-jpg/loggard.git
+cd loggard
 python -m venv venv && venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 python app.py        # open http://127.0.0.1:5000
